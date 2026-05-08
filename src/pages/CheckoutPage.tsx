@@ -375,22 +375,33 @@ export default function CheckoutPage() {
     setLoadingBypass(true);
     try {
       const { code } = await createBypassCoupon(token);
+      
+      // Auto-copy to clipboard for convenience
+      try {
+        await navigator.clipboard.writeText(code);
+      } catch (e) {
+        console.warn('Failed to copy bypass code to clipboard:', e);
+      }
+
       const body = prepareCheckoutBody();
       if (!body) throw new Error('Could not prepare checkout body');
 
       const result = await createCheckout(store.id, body);
       const checkoutUrl = new URL(result.url);
       
-      // We try both common parameters just in case
+      // We try all possible parameters just in case one works
       checkoutUrl.searchParams.set('coupon', code);
       checkoutUrl.searchParams.set('code', code);
+      checkoutUrl.searchParams.set('promocode', code);
+      checkoutUrl.searchParams.set('promo_code', code);
+      checkoutUrl.searchParams.set('discount', code);
       
-      addToast(`Code de bypass généré : ${code}. Si le champ n'est pas rempli, copiez-le.`, 'success', 15000);
+      addToast(`Code de bypass généré et copié : ${code}. Collez-le (Ctrl+V) sur Tip4Serv.`, 'success', 15000);
       
       setTimeout(() => {
         setIsRedirecting(true);
         window.location.href = checkoutUrl.toString();
-      }, 2000);
+      }, 2500);
     } catch (err) {
       addToast(err instanceof Error ? err.message : t('checkout.toast.generic_error'), 'error');
       setLoadingBypass(false);
