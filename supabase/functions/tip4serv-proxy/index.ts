@@ -265,6 +265,54 @@ Deno.serve(async (req: Request) => {
         break;
       }
 
+      case "admin-create-bypass-coupon": {
+        // 1. Get the user token from the request
+        const authHeader = req.headers.get("Authorization");
+        if (!authHeader) {
+          return errorResponse(401, "Missing user authorization");
+        }
+
+        // 2. Fetch the current user info from Tip4Serv
+        const userRes = await fetch(`${TIP4SERV_BASE}/user/whoami`, {
+          headers: {
+            Authorization: authHeader,
+            Accept: "application/json",
+          },
+        });
+        if (!userRes.ok) {
+          return errorResponse(401, "Invalid user token");
+        }
+        const userData = await userRes.json();
+        const userId = userData?.user?.id || userData?.id;
+
+        if (!userId) {
+          return errorResponse(401, "Could not identify user");
+        }
+
+        // 3. Fetch store info to check ownership
+        const storeInfo = (await fetchTip4Serv("/store/whoami", apiKey)) as any;
+        const ownerId = storeInfo?.owner;
+
+        if (!ownerId || Number(userId) !== Number(ownerId)) {
+          return errorResponse(403, "Only the store owner can perform this action");
+        }
+
+        // 4. Create the 100% bypass coupon
+        const randomCode = `BYPASS-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+        const couponBody = {
+          code: randomCode,
+          type: "percentage",
+          value: 100,
+          limit: 1,
+          expiration: Date.now() + 600000, // 10 minutes
+          accepted_categories: [], // All
+          accepted_products: [], // All
+        };
+
+        data = await postTip4Serv("/store/discount/coupon", apiKey, couponBody);
+        break;
+      }
+
       default:
         return errorResponse(400, "Invalid action parameter");
     }

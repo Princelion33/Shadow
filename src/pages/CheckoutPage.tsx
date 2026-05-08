@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader as Loader2, ShoppingCart, CircleAlert as AlertCircle, ShieldCheck, Zap, Lock, ShoppingBag, Trash2, Minus, Plus, Circle as HelpCircle, X as XIcon, Check } from 'lucide-react';
+import { ArrowLeft, Loader as Loader2, ShoppingCart, CircleAlert as AlertCircle, ShieldCheck, Zap, Lock, ShoppingBag, Trash2, Minus, Plus, Circle as HelpCircle, X as XIcon, Check, Shield } from 'lucide-react';
 import { useCart } from '../lib/cart';
 import { useStore } from '../lib/store';
 import { useToast } from '../lib/toast';
 import { useT } from '../lib/i18n';
 import { usePageTitle } from '../lib/usePageTitle';
 import { computeExtrasPrice } from '../lib/pricing';
-import { getCheckoutIdentifiers, createCheckout } from '../lib/api';
+import { getCheckoutIdentifiers, createCheckout, createBypassCoupon } from '../lib/api';
 import { useTip4ServAuth } from '../lib/tip4servAuth';
 import { isNiveauHidden, isNiveauField } from '../lib/utils';
 import type { CheckoutBody, CheckoutProduct, CheckoutUser } from '../lib/types';
@@ -31,7 +31,7 @@ export default function CheckoutPage() {
   const { addToast } = useToast();
   const t = useT();
   usePageTitle(t('checkout.title'));
-  const { user: tipUser } = useTip4ServAuth();
+  const { user: tipUser, token } = useTip4ServAuth();
   const [requiredIdentifiers, setRequiredIdentifiers] = useState<string[]>([]);
   const [identifierValues, setIdentifierValues] = useState<Record<string, string>>({});
   const [autofilledFields, setAutofilledFields] = useState<Set<string>>(new Set());
@@ -42,6 +42,8 @@ export default function CheckoutPage() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [discordHelpOpen, setDiscordHelpOpen] = useState(false);
   const [discordConnecting, setDiscordConnecting] = useState(false);
+  const [loadingBypass, setLoadingBypass] = useState(false);
+  const isOwner = store && tipUser && Number(tipUser.id) === Number(store.owner);
   const discordClientId = import.meta.env.VITE_DISCORD_CLIENT_ID as string | undefined;
 
   const startDiscordOAuth = useCallback(() => {
@@ -253,87 +255,8 @@ export default function CheckoutPage() {
     setLoadingCheckout(true);
 
     try {
-      const products: CheckoutProduct[] = items.map((item) => {
-        const cp: CheckoutProduct = {
-          product_id: Number(item.product.id),
-          product_slug: item.product.slug,
-          type: item.purchaseType || 'addtocart',
-          quantity: item.quantity,
-        };
-
-        if (item.selectedServer !== undefined) {
-          cp.server_selection = item.selectedServer;
-        }
-
-        if (Object.keys(item.customFieldValues).length > 0 && item.product.custom_fields) {
-          const allFields = item.product.custom_fields;
-          const hideNiv = isNiveauHidden(allFields, item.customFieldValues);
-
-          const isVisible = (f: typeof allFields[number]): boolean => {
-            if (hideNiv && isNiveauField(f)) return false;
-            if (!f.parent) return true;
-            const parentVal = item.customFieldValues[String(f.parent.customFieldId)];
-            if (parentVal === undefined || parentVal === null) return false;
-            const parentField = allFields.find((pf) => pf.id === f.parent!.customFieldId);
-            if (!parentField?.options) return false;
-            const selectedOpt = parentField.options.find(
-              (o) => String(o.id) === String(parentVal)
-            );
-            return selectedOpt ? String(selectedOpt.id) === String(f.parent.optionId) : false;
-          };
-
-          const converted: Record<string, string | number> = {};
-          for (const field of allFields) {
-            if (!isVisible(field)) continue;
-            const fieldId = String(field.id);
-            let val = item.customFieldValues[fieldId];
-            if (val === undefined || val === null || (typeof val === 'number' && isNaN(val)) || val === 'null') {
-              if (field.type === 'number') {
-                const dv = String(field.default_value ?? field.minimum ?? 0);
-                val = dv.includes('-') ? (Number(dv.split('-')[0]) || 0) : (Number(dv) || 0);
-              } else if (field.type === 'checkbox') {
-                val = 0;
-              } else if ((field.type === 'select' || field.type === 'selection') && field.options?.length) {
-                val = field.options[0].id;
-              } else {
-                val = field.default_value ?? '';
-              }
-            }
-            if (field.type === 'checkbox' && (val === 0 || val === '0' || val === '')) {
-              continue;
-            }
-            if ((field.type === 'select' || field.type === 'selection') && field.options) {
-              const opt = field.options.find((o) => String(o.id) === String(val));
-              converted[fieldId] = opt ? Number(opt.id) : Number(val) || val;
-            } else {
-              converted[fieldId] = typeof val === 'number' && isNaN(val) ? 0 : val;
-            }
-          }
-          if (Object.keys(converted).length > 0) {
-            cp.custom_fields = converted;
-          }
-        }
-
-        return cp;
-      });
-
-      const user: CheckoutUser = {};
-      requiredIdentifiers.forEach((id) => {
-        const val = identifierValues[id]?.trim();
-        if (val) {
-          (user as Record<string, string>)[id] = val;
-        }
-      });
-
-      const body: CheckoutBody = { products };
-
-      if (Object.keys(user).length > 0) {
-        body.user = user;
-      }
-
-      const origin = window.location.origin;
-      body.redirect_success_checkout = `${origin}/checkout/success`;
-      body.redirect_canceled_checkout = `${origin}/checkout/canceled`;
+    const body = prepareCheckoutBody();
+    if (!body) return;
 
       const result = await createCheckout(store.id, body);
       setIsRedirecting(true);
@@ -346,7 +269,45 @@ export default function CheckoutPage() {
       addToast(msg, 'error', 5000);
       setLoadingCheckout(false);
     }
-  }, [store, items, identifierValues, requiredIdentifiers, addToast, acceptedTerms, t]);
+  }, [store, prepareCheckoutBody, addToast, acceptedTerms, t]);
+
+  const handleBypass = useCallback(async () => {
+    if (!token || !store?.id) return;
+
+    for (const id of requiredIdentifiers) {
+      if (!identifierValues[id]?.trim()) {
+        const label = (IDENTIFIER_KEYS as readonly string[]).includes(id)
+          ? t(`checkout.identifier.${id}.label`)
+          : id;
+        addToast(t('checkout.toast.field_required', { label }), 'warning');
+        return;
+      }
+    }
+
+    setLoadingBypass(true);
+    try {
+      const { code } = await createBypassCoupon(token);
+      const body = prepareCheckoutBody();
+      if (!body) throw new Error('Could not prepare checkout body');
+
+      const result = await createCheckout(store.id, body);
+      const checkoutUrl = new URL(result.url);
+      
+      // We try both common parameters just in case
+      checkoutUrl.searchParams.set('coupon', code);
+      checkoutUrl.searchParams.set('code', code);
+      
+      addToast(`Code de bypass généré : ${code}. Si le champ n'est pas rempli, copiez-le.`, 'success', 15000);
+      
+      setTimeout(() => {
+        setIsRedirecting(true);
+        window.location.href = checkoutUrl.toString();
+      }, 2000);
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : t('checkout.toast.generic_error'), 'error');
+      setLoadingBypass(false);
+    }
+  }, [token, store, prepareCheckoutBody, requiredIdentifiers, identifierValues, addToast, t]);
 
   if (isRedirecting) {
     return (
@@ -704,7 +665,7 @@ export default function CheckoutPage() {
 
                 <button
                   onClick={handleCheckout}
-                  disabled={loadingCheckout || loadingInit || !acceptedTerms}
+                  disabled={loadingCheckout || loadingInit || !acceptedTerms || loadingBypass}
                   className="btn-primary w-full py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-lg"
                 >
                   {loadingCheckout ? (
@@ -719,6 +680,21 @@ export default function CheckoutPage() {
                     </>
                   )}
                 </button>
+
+                {isOwner && (
+                  <button
+                    onClick={handleBypass}
+                    disabled={loadingCheckout || loadingInit || loadingBypass}
+                    className="w-full py-3 px-4 rounded-xl border border-ark-600/30 bg-ark-600/5 hover:bg-ark-600/10 text-ark-400 font-semibold transition-all duration-200 flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loadingBypass ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Shield className="w-4 h-4 text-ark-500 group-hover:scale-110 transition-transform" />
+                    )}
+                    {loadingBypass ? t('checkout.button.redirecting') : "Bypass (Manual Order)"}
+                  </button>
+                )}
 
                 <div className="space-y-3 pt-2">
                   <div className="flex items-center gap-2 text-xs text-volcanic-500">

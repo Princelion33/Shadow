@@ -217,3 +217,31 @@ export async function createCheckout(
   return res.json();
 }
 
+export async function validateCoupon(code: string): Promise<{
+  valid: boolean;
+  message?: string;
+  type?: 'coupon';
+  discount_type?: 'percentage' | 'fixed';
+  discount_value?: number;
+  code?: string;
+  minimum?: number;
+  maximum?: number | null;
+}> {
+  return fetchApi({ action: 'validate-coupon', code });
+}
+
+export async function createBypassCoupon(userToken: string): Promise<{ code: string }> {
+  const searchParams = new URLSearchParams({ action: 'admin-create-bypass-coupon' });
+  const res = await fetch(`${API_URL}?${searchParams}`, {
+    headers: {
+      ...headers,
+      Authorization: `Bearer ${userToken}`,
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `API error: ${res.status}`);
+  }
+  return res.json();
+}
+
