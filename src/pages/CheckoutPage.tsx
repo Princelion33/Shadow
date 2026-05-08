@@ -387,21 +387,13 @@ export default function CheckoutPage() {
       if (!body) throw new Error('Could not prepare checkout body');
 
       const result = await createCheckout(store.id, body);
-      const checkoutUrl = new URL(result.url);
       
-      // We try all possible parameters just in case one works
-      checkoutUrl.searchParams.set('coupon', code);
-      checkoutUrl.searchParams.set('code', code);
-      checkoutUrl.searchParams.set('promocode', code);
-      checkoutUrl.searchParams.set('promo_code', code);
-      checkoutUrl.searchParams.set('discount', code);
-      
-      addToast(`Code de bypass généré et copié : ${code}. Collez-le (Ctrl+V) sur Tip4Serv.`, 'success', 15000);
+      addToast(`Code de bypass généré et copié : ${code}. Collez-le sur Tip4Serv.`, 'success', 15000);
       
       setTimeout(() => {
         setIsRedirecting(true);
-        window.location.href = checkoutUrl.toString();
-      }, 2500);
+        window.location.href = result.url;
+      }, 2000);
     } catch (err) {
       addToast(err instanceof Error ? err.message : t('checkout.toast.generic_error'), 'error');
       setLoadingBypass(false);
