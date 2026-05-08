@@ -185,6 +185,94 @@ export default function CheckoutPage() {
     return () => window.cancelAnimationFrame(id);
   }, [loadingInit, requiredIdentifiers.length]);
 
+  const prepareCheckoutBody = useCallback((): CheckoutBody | null => {
+    if (!store?.id) return null;
+
+    const products: CheckoutProduct[] = items.map((item) => {
+      const cp: CheckoutProduct = {
+        product_id: Number(item.product.id),
+        product_slug: item.product.slug,
+        type: item.purchaseType || 'addtocart',
+        quantity: item.quantity,
+      };
+
+      if (item.selectedServer !== undefined) {
+        cp.server_selection = item.selectedServer;
+      }
+
+      if (Object.keys(item.customFieldValues).length > 0 && item.product.custom_fields) {
+        const allFields = item.product.custom_fields;
+        const hideNiv = isNiveauHidden(allFields, item.customFieldValues);
+
+        const isVisible = (f: typeof allFields[number]): boolean => {
+          if (hideNiv && isNiveauField(f)) return false;
+          if (!f.parent) return true;
+          const parentVal = item.customFieldValues[String(f.parent.customFieldId)];
+          if (parentVal === undefined || parentVal === null) return false;
+          const parentField = allFields.find((pf) => pf.id === f.parent!.customFieldId);
+          if (!parentField?.options) return false;
+          const selectedOpt = parentField.options.find(
+            (o) => String(o.id) === String(parentVal)
+          );
+          return selectedOpt ? String(selectedOpt.id) === String(f.parent.optionId) : false;
+        };
+
+        const converted: Record<string, string | number> = {};
+        for (const field of allFields) {
+          if (!isVisible(field)) continue;
+          const fieldId = String(field.id);
+          let val = item.customFieldValues[fieldId];
+          if (val === undefined || val === null || (typeof val === 'number' && isNaN(val)) || val === 'null') {
+            if (field.type === 'number') {
+              const dv = String(field.default_value ?? field.minimum ?? 0);
+              val = dv.includes('-') ? (Number(dv.split('-')[0]) || 0) : (Number(dv) || 0);
+            } else if (field.type === 'checkbox') {
+              val = 0;
+            } else if ((field.type === 'select' || field.type === 'selection') && field.options?.length) {
+              val = field.options[0].id;
+            } else {
+              val = field.default_value ?? '';
+            }
+          }
+          if (field.type === 'checkbox' && (val === 0 || val === '0' || val === '')) {
+            continue;
+          }
+          if ((field.type === 'select' || field.type === 'selection') && field.options) {
+            const opt = field.options.find((o) => String(o.id) === String(val));
+            converted[fieldId] = opt ? Number(opt.id) : Number(val) || val;
+          } else {
+            converted[fieldId] = typeof val === 'number' && isNaN(val) ? 0 : val;
+          }
+        }
+        if (Object.keys(converted).length > 0) {
+          cp.custom_fields = converted;
+        }
+      }
+
+      return cp;
+    });
+
+    const user: CheckoutUser = {};
+    requiredIdentifiers.forEach((id) => {
+      const val = identifierValues[id]?.trim();
+      if (val) {
+        (user as Record<string, string>)[id] = val;
+      }
+    });
+
+    const body: CheckoutBody = { products };
+
+    if (Object.keys(user).length > 0) {
+      body.user = user;
+    }
+
+    const origin = window.location.origin;
+    body.redirect_success_checkout = `${origin}/checkout/success`;
+    body.redirect_canceled_checkout = `${origin}/checkout/canceled`;
+
+    return body;
+  }, [store?.id, items, requiredIdentifiers, identifierValues]);
+
   const handleCheckout = useCallback(async () => {
     if (!acceptedTerms) {
       addToast(t('checkout.toast.accept_terms'), 'warning');
