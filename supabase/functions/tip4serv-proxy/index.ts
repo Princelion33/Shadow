@@ -304,7 +304,7 @@ Deno.serve(async (req: Request) => {
           type: "percentage",
           value: 100,
           limit: 1,
-          expiration: Date.now() + 600000, // 10 minutes
+          expiration: Math.floor(Date.now() / 1000) + 600, // 10 minutes in seconds
           accepted_categories: [], // All
           accepted_products: [], // All
         };
