@@ -110,7 +110,7 @@ export default function AdminPage() {
       setInfo('Ownership claimed. You can now configure the Tip4Serv key.');
       await resolveStatus(session);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError((err as any)?.message || (err as any)?.error_description || String(err));
     } finally {
       setBusy(false);
     }
@@ -129,7 +129,7 @@ export default function AdminPage() {
       if (signInErr) throw signInErr;
       setPassword('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError((err as any)?.message || (err as any)?.error_description || String(err));
     } finally {
       setBusy(false);
     }
