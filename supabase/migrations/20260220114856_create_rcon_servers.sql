@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS rcon_servers (
 
 ALTER TABLE rcon_servers ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Anyone can read server list" ON rcon_servers;
 CREATE POLICY "Anyone can read server list"
   ON rcon_servers
   FOR SELECT

@@ -74,11 +74,13 @@ CREATE POLICY "Users can remove from own wishlist"
   USING (auth.uid() = user_id);
 
 -- Product stats policies: public read, controlled write
+DROP POLICY IF EXISTS "Anyone can view product stats" ON product_stats;
 CREATE POLICY "Anyone can view product stats"
   ON product_stats FOR SELECT
   TO anon, authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Service can manage product stats" ON product_stats;
 CREATE POLICY "Service can manage product stats"
   ON product_stats FOR ALL
   TO authenticated

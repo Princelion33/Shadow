@@ -84,21 +84,26 @@ export default function AdminPage() {
     setInfo(null);
     setBusy(true);
     try {
-      const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-      if (signUpErr && !/already|registered/i.test(signUpErr.message)) {
-        throw signUpErr;
+      let userId = session?.user?.id;
+
+      if (!userId) {
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        if (signUpErr && !/already|registered/i.test(signUpErr.message)) {
+          throw signUpErr;
+        }
+
+        userId = signUpData?.user?.id ?? null;
+        if (!userId) {
+          const { data: signInData, error: signInErr } =
+            await supabase.auth.signInWithPassword({ email, password });
+          if (signInErr) throw signInErr;
+          userId = signInData.user?.id ?? null;
+        }
       }
 
-      let userId = signUpData?.user?.id ?? null;
-      if (!userId) {
-        const { data: signInData, error: signInErr } =
-          await supabase.auth.signInWithPassword({ email, password });
-        if (signInErr) throw signInErr;
-        userId = signInData.user?.id ?? null;
-      }
       if (!userId) throw new Error('Authentication failed');
 
       const { error: claimErr } = await supabase
