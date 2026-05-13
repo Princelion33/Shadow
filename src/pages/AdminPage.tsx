@@ -208,35 +208,48 @@ export default function AdminPage() {
           )}
 
           {status === 'claim' && (
-            <form onSubmit={handleClaim} className="space-y-4">
+            <div className="space-y-4">
               <div>
                 <h2 className="font-medium text-[var(--color-text)]">
                   Claim this site
                 </h2>
                 <p className="text-sm text-[var(--color-text-muted)] mt-1">
-                  No owner yet. Create the owner account now — this is a
-                  one-time action.
+                  No owner yet. {session ? 'You are logged in, click below to become the owner.' : 'Create the owner account now — this is a one-time action.'}
                 </p>
               </div>
-              <Field
-                label="Email"
-                type="email"
-                value={email}
-                onChange={setEmail}
-                required
-              />
-              <Field
-                label="Password"
-                type="password"
-                value={password}
-                onChange={setPassword}
-                required
-                minLength={6}
-              />
-              <SubmitButton busy={busy} icon={<ShieldCheck className="w-4 h-4" />}>
-                Claim ownership
-              </SubmitButton>
-            </form>
+
+              {session ? (
+                <button
+                  onClick={() => handleClaim(new Event('submit') as any)}
+                  disabled={busy}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--color-primary)] text-white font-medium hover:opacity-90 transition disabled:opacity-50"
+                >
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                  Confirm I am the owner
+                </button>
+              ) : (
+                <form onSubmit={handleClaim} className="space-y-4">
+                  <Field
+                    label="Email"
+                    type="email"
+                    value={email}
+                    onChange={setEmail}
+                    required
+                  />
+                  <Field
+                    label="Password"
+                    type="password"
+                    value={password}
+                    onChange={setPassword}
+                    required
+                    minLength={6}
+                  />
+                  <SubmitButton busy={busy} icon={<ShieldCheck className="w-4 h-4" />}>
+                    Claim ownership
+                  </SubmitButton>
+                </form>
+              )}
+            </div>
           )}
 
           {status === 'login' && (
